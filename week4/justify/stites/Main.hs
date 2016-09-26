@@ -28,8 +28,12 @@
 --
 -- Don't justify the last line or it'll look really ugly.
 --------------------------------------------------------------------------------
-
 module Main where
+
+-- import Data.Sequence (Seq)
+-- import qualified Data.Sequence as S
+import Debug.Trace
+import Data.List
 
 main :: IO ()
 main = do
@@ -37,38 +41,79 @@ main = do
   strWidth <- getLine
   let width = read strWidth :: Int
   putStr "enter text to justify: "
-  strWidth <- getLine
+  text <- getLine
+  let q = wordsWithLength $ text
+  -- putStrLn $ show q
+  let ws = fmap (\(ss, i) -> (onInit (++" ") ss, i)) $ reverse $ wordsToLines width q
+  -- putStrLn $ show ws
+  let ws' = map (\(ln, l) -> (ln, width - l)) ws
+  let ls = map (\(ln, s) -> fillSpaces s ln) ws'
+  let ls' = map (\(rem, ln) -> snd $ injectSpaces_ rem ln) ls
 
   putStrLn "output: "
+  printJusified ls' (map fst ws)
+
   return ()
+  where
+    putMergedLine :: [String] -> IO ()
+    putMergedLine ss = do
+      putStr $ intercalate "" ss
+      putStrLn $ "--" ++ (show . length) ss
 
-lengths :: [String] -> [Int]
-lengths = fmap length
+    printJusified :: [[String]] -> [[String]] -> IO ()
+    printJusified justified original = do
+      mapM_ putMergedLine . init $ justified
+      putMergedLine . last $ original
 
-txtWidth :: [Int] -> [Int]
-txtWidth = tail . scanl (+) 0
+wordsWithLength :: String -> [(String, Int)]
+wordsWithLength str = let ws = words str in zip ws (fmap length $ ws)
 
-textToLines :: String -> [(String, Int)]
-textToLines str = let
-    ws = words str
- in
-   zip ws (lengths $ ws)
+onInit :: (a -> a) -> [a] -> [a]
+f `onInit` [] = []
+f `onInit` ss = (fmap f $ init ss) ++ [last ss]
 
-scansToLine :: Int -> [(String, Int)] -> [([String], Int)]
-scansToLine txtwidth = reverse . go [([""], -1)]
+wordsToLines :: Int -> [(String, Int)] -> [([String], Int)]
+wordsToLines txtwidth = go [([""], -1)]
   where
     go :: [([String], Int)] -> [(String, Int)] -> [([String], Int)]
-    go acc     [] = acc
+    go acc               [] = acc
     go acc ((w, wlen):more) =
       let
         (ws, llen) = head acc
-        nxtLen = wlen + llen
+        lineLen = wlen + llen
+        continue =
+          if lineLen <= txtwidth
+          then (ws ++ [w], lenWithSpace lineLen):(tail acc)
+          else ([w++" "], wlen):acc
       in
-        if nxtLen <= txtwidth
-           then go ((w:ws, also nxtLen txtwidth):(tail acc)) more
-           else go (([w], wlen):acc) more
+        go continue more
 
-    also nxtLen textwidth = if nxtLen == txtwidth then nxtLen else nxtLen+1
+    lenWithSpace ll = if ll == txtwidth then ll else ll+1
+    wrdWithSpace ll w = if ll == txtwidth then w else w ++ " "
+
+spacesToAdd :: Int -> [([String], Int)] -> [Int]
+spacesToAdd width = fmap ((-) width . snd)
+
+fillSpaces :: Int -> [String] -> (Int, [String])
+fillSpaces nspaces strs = let
+    l = length strs
+    d = nspaces `div` l
+    r = nspaces `mod` l
+    filler = replicate (nspaces `div` (length strs)) ' '
+ in (r, fmap (:[]) . intercalate filler $ strs)
+
+injectSpaces_ :: Int -> [String] -> (Int, [String])
+injectSpaces_ nspaces [] = (nspaces, [])
+injectSpaces_ nspaces ss = let
+    (nextspaces, ns) = foldr go (nspaces, []) (init ss)
+  in (nextspaces,  ns ++ [last ss])
+  where
+    go :: String -> (Int, [String]) -> (Int, [String])
+    go next (nspaces, memo) = (nspaces - 1, (ammendSpace nspaces next) ++ memo)
+
+    ammendSpace :: Int -> String -> [String]
+    ammendSpace n s = if n <= 0 then [s] else [s, " "]
+
 
 
 
