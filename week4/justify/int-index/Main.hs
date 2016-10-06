@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, TypeApplications, OverloadedStrings #-}
+{-# LANGUAGE LambdaCase, TypeApplications, OverloadedStrings, BangPatterns #-}
 
 module Main where
 
@@ -9,6 +9,8 @@ import Data.List as List
 import Data.List.NonEmpty as NonEmpty
 import Data.Semigroup
 import Data.Maybe
+import Data.Bool
+import Data.Ratio
 import System.Exit
 
 data Line = Line
@@ -29,8 +31,7 @@ nonEmptyTails = NonEmpty.fromList . List.tail . List.tails . NonEmpty.toList
 
 justify :: Int -> Text -> Text
 justify desiredLineWidth =
-  Text.unlines . List.reverse . mergeLines . List.reverse .
-    groupWords . List.map initLine . Text.words
+  Text.unlines . mergeLines . groupWords . List.map initLine . Text.words
   where
     groupWords :: [Line] -> [Line]
     groupWords = List.unfoldr (fmap @Maybe groupWords' . nonEmpty)
@@ -38,7 +39,7 @@ justify desiredLineWidth =
     groupWords' :: NonEmpty Line -> (Line, [Line])
     groupWords' lines =
       fromMaybe (NonEmpty.head groupings) $
-        listToMaybe $ List.reverse goodGroupings
+        NonEmpty.last <$> nonEmpty goodGroupings
       where
         goodGroupings = NonEmpty.takeWhile (fits . fst) groupings
         groupings =
@@ -50,10 +51,9 @@ justify desiredLineWidth =
     fits line = lineWidth line <= desiredLineWidth
 
     mergeLines :: [Line] -> [Text]
-    mergeLines []             = []
-    mergeLines (line : lines) =
-      (Text.unwords . NonEmpty.toList . lineWords) line :
-        List.map mergeLine lines
+    mergeLines []     = []
+    mergeLines [line] = [(Text.unwords . NonEmpty.toList . lineWords) line]
+    mergeLines (line : lines) = mergeLine line : mergeLines lines
 
     mergeLine :: Line -> Text
     mergeLine line =
@@ -64,24 +64,20 @@ justify desiredLineWidth =
           (desiredLineWidth - lineWidth line))
 
 concatSpaces :: [Text] -> [Int] -> Text
+concatSpaces ts     []     = Text.unwords ts
 concatSpaces (t:ts) (s:ss) =
-  t `mappend` Text.replicate (s + 1) " " `mappend` concatSpaces ts ss
-concatSpaces [t]    _      = t
-concatSpaces []     _      = ""
+  t <> Text.replicate (s + 1) " " <> concatSpaces ts ss
 
 distributeExcessSpaces
   :: Int   -- position count
   -> Int   -- excess space count
   -> [Int] -- space by positions
-distributeExcessSpaces 0         _ = []
-distributeExcessSpaces positions n =
-  if r > 0
-    then List.zipWith (+) quotC remC
-    else quotC
+distributeExcessSpaces positions n = List.take positions (distrib freq)
   where
-    (q, r) = n `quotRem` positions
-    quotC  = List.repeat q
-    remC   = List.cycle $ 1 : List.replicate (positions `quot` r) 0
+    freq = n % positions
+    distrib !prob =
+      let k = floor prob :: Int
+      in k : distrib (prob + freq - fromIntegral k)
 
 main :: IO ()
 main = do
